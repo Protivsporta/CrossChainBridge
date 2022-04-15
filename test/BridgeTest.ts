@@ -13,26 +13,25 @@ describe("BridgeBSC", function () {
   let addr1: SignerWithAddress;
   let addr2: SignerWithAddress;
   let addr3: SignerWithAddress;
-  let addrs: SignerWithAddress[];
   let clean: any;
 
   const initialTokenBalance: BigNumber = utils.parseUnits("100000000", 18);
 
   before(async () => {
-    [owner, backendSigner, addr1, addr2, addr3, ...addrs] = await ethers.getSigners();
+    [owner, backendSigner, addr1, addr2, addr3] = await ethers.getSigners();
 
-    const Token = await ethers.getContractFactory("BSCToken");
+    const Token = await ethers.getContractFactory("BSCToken", owner);
     bscToken = await Token.deploy(
-      "TestToken",
-      "TTN",
+      "BSCToken",
+      "BSCT",
       initialTokenBalance
     );
-    const BridgeContract = await ethers.getContractFactory("BridgeBSC");
+    const BridgeContract = await ethers.getContractFactory("BridgeBSC", owner);
     bridgeContract = await BridgeContract.deploy(
       bscToken.address,
       backendSigner.address
     );
-    
+
     clean = await network.provider.request({
       method: "evm_snapshot",
       params: [],
@@ -80,15 +79,15 @@ describe("BridgeBSC", function () {
 
   it("Check swap emiting event", async function () {
     const amount = utils.parseUnits("10", 18);
-    const msg = genMessage(addr2.address, amount);
+    const msg = genMessage(owner.address, amount);
     const signature = await signMessage(owner, msg);
     const balanceOfSender = await bscToken.balanceOf(owner.address);
     const totalSupply = await bscToken.totalSupply();
 
-    const tx = bridgeContract.swap(addr2.address, amount, signature);
+    const tx = bridgeContract.swap(owner.address, amount, signature);
     await expect(tx)
       .to.emit(bridgeContract, "SwapInitialized")
-      .withArgs(owner.address, addr2.address, amount, bigInt("1"), signature);
+      .withArgs(owner.address, owner.address, amount, bigInt("0"), signature);
 
     const newBalanceOfSender = await bscToken.balanceOf(owner.address);
     const newTotalSupply = await bscToken.totalSupply();
@@ -128,7 +127,7 @@ describe("BridgeBSC", function () {
     const totalSupply = await bscToken.totalSupply();
 
     await expect(bridgeContract.redeem(owner.address, addr2.address, amount, bigInt("1"), signature, backendSign))
-      .to.emit(bridgeContract, "RedeemComplete")
+      .to.emit(bridgeContract, "Redeemed")
       .withArgs(owner.address, addr2.address, amount);
 
     const newBalanceOfRecepient = await bscToken.balanceOf(addr2.address);
@@ -147,7 +146,7 @@ describe("BridgeBSC", function () {
 
     await bridgeContract.redeem(owner.address, addr2.address, amount, bigInt("1"), signature, backendSign);
     await expect(bridgeContract.redeem(owner.address, addr2.address, amount, bigInt("1"), signature, backendSign)).
-      to.be.revertedWith("transfer already processed");
+      to.be.revertedWith("Transfer already processed");
   });
 
   it("Can't redeem with wrong backend signature message", async function () {
@@ -158,7 +157,7 @@ describe("BridgeBSC", function () {
     const backendSign = await signMessage(owner, backendMsg);
 
     const tx = bridgeContract.redeem(addr1.address, addr2.address, amount, bigInt("1"), signature, backendSign);
-    await expect(tx).to.be.revertedWith("wrong backend signature");
+    await expect(tx).to.be.revertedWith("Wrong signature from backend");
   });
 
   it("Can't redeem with wrong from address message", async function () {
@@ -169,6 +168,6 @@ describe("BridgeBSC", function () {
     const backendSign = await signMessage(owner, backendMsg);
 
     const tx = bridgeContract.redeem(addr1.address, addr2.address, amount, bigInt("1"), signature, backendSign);
-    await expect(tx).to.be.revertedWith("wrong backend signature");
+    await expect(tx).to.be.revertedWith("Wrong signature from backend");
   });
 });
